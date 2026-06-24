@@ -1,0 +1,45 @@
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment Variables
+.env
+.env.local
+
+# Database
+leads.db
+leads.db-wal
+leads.db-shm
+*.sqlite3
+
+# Logs
+logs/
+*.log
+app.log
+
+# Build & Temporary Files
+tmp/
+temp/
+build/
+dist/
+coverage/
+
+# Editor Files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
