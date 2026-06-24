@@ -415,9 +415,9 @@ class handler(http.server.BaseHTTPRequestHandler):
                     if leads:
                         headers = [
                             'created_at', 'full_name', 'email', 'whatsapp_number', 
-                            'form_source', 'lead_status', 'priority', 'survey_plan', 
-                            'survey_current', 'survey_sperm', 'survey_challenge', 
-                            'survey_early_adopter', 'notes'
+                            'form_source', 'lead_status', 'priority', 'survey_planning_time', 
+                            'survey_currently_trying', 'survey_specialist', 'survey_challenge', 
+                            'survey_early_access', 'notes'
                         ]
                         ws.append(headers)
                         for row in leads:
@@ -442,9 +442,9 @@ class handler(http.server.BaseHTTPRequestHandler):
                     if leads:
                         headers = [
                             'created_at', 'full_name', 'email', 'whatsapp_number', 
-                            'form_source', 'lead_status', 'priority', 'survey_plan', 
-                            'survey_current', 'survey_sperm', 'survey_challenge', 
-                            'survey_early_adopter', 'notes'
+                            'form_source', 'lead_status', 'priority', 'survey_planning_time', 
+                            'survey_currently_trying', 'survey_specialist', 'survey_challenge', 
+                            'survey_early_access', 'notes'
                         ]
                         writer.writerow(headers)
                         for row in leads:
