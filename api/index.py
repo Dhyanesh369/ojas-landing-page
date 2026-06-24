@@ -413,11 +413,16 @@ class handler(http.server.BaseHTTPRequestHandler):
                     ws = wb.active
                     ws.title = "Leads"
                     if leads:
-                        headers = list(leads[0].keys())
+                        headers = [
+                            'created_at', 'full_name', 'email', 'whatsapp_number', 
+                            'form_source', 'lead_status', 'priority', 'survey_plan', 
+                            'survey_current', 'survey_sperm', 'survey_challenge', 
+                            'survey_early_adopter', 'notes'
+                        ]
                         ws.append(headers)
                         for row in leads:
                             # Convert to strings to avoid excel errors on None
-                            ws.append([str(row[k]) if row[k] is not None else '' for k in headers])
+                            ws.append([str(row.get(k, '')) if row.get(k) is not None else '' for k in headers])
                     
                     stream = BytesIO()
                     wb.save(stream)
@@ -435,10 +440,15 @@ class handler(http.server.BaseHTTPRequestHandler):
                     stream = io.StringIO()
                     writer = csv.writer(stream)
                     if leads:
-                        headers = list(leads[0].keys())
+                        headers = [
+                            'created_at', 'full_name', 'email', 'whatsapp_number', 
+                            'form_source', 'lead_status', 'priority', 'survey_plan', 
+                            'survey_current', 'survey_sperm', 'survey_challenge', 
+                            'survey_early_adopter', 'notes'
+                        ]
                         writer.writerow(headers)
                         for row in leads:
-                            writer.writerow([str(row[k]) if row[k] is not None else '' for k in headers])
+                            writer.writerow([str(row.get(k, '')) if row.get(k) is not None else '' for k in headers])
                     
                     data = stream.getvalue().encode('utf-8')
                     self.send_response(200)
