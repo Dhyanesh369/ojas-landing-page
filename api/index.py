@@ -262,7 +262,7 @@ class handler(http.server.BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header('Content-type', 'application/json')
         self.end_headers()
-        self.wfile.write(json.dumps(data).encode())
+        self.wfile.write(json.dumps(data, default=str).encode())
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
