@@ -1,7 +1,8 @@
 import http.server
 import socketserver
 import json
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import uuid
 import os
 import hashlib
@@ -19,7 +20,12 @@ logging.basicConfig(filename='app.log', level=logging.INFO, format='%(asctime)s 
 IP_RATE_LIMIT = {}
 
 PORT = 8000
-DB_FILE = '/tmp/leads.db'
+def get_db_connection():
+    postgres_url = os.environ.get('POSTGRES_URL') or os.environ.get('DATABASE_URL')
+    if postgres_url:
+        return psycopg2.connect(postgres_url, cursor_factory=RealDictCursor)
+    raise Exception('POSTGRES_URL environment variable is missing!')
+
 
 SMTP_SERVER = os.environ.get('SMTP_SERVER', 'smtp.gmail.com')
 SMTP_PORT = int(os.environ.get('SMTP_PORT', 587))
@@ -31,10 +37,7 @@ def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def init_db():
-    conn = sqlite3.connect(DB_FILE, timeout=10)
-    conn.execute('PRAGMA journal_mode=WAL')
-    conn.execute('PRAGMA synchronous=NORMAL')
-    conn.row_factory = sqlite3.Row
+    conn = get_db_connection()
     c = conn.cursor()
     
     c.execute('''
@@ -73,21 +76,16 @@ def init_db():
         )
     ''')
     
-    # Try adding columns gracefully in case db already exists
-    try: c.execute('ALTER TABLE leads ADD COLUMN survey_planning_time TEXT')
-    except: pass
-    try: c.execute('ALTER TABLE leads ADD COLUMN survey_currently_trying TEXT')
-    except: pass
-    try: c.execute('ALTER TABLE leads ADD COLUMN survey_specialist TEXT')
-    except: pass
-    try: c.execute('ALTER TABLE leads ADD COLUMN survey_challenge TEXT')
-    except: pass
-    try: c.execute('ALTER TABLE leads ADD COLUMN survey_early_access TEXT')
-    except: pass
+    # Add columns gracefully in case db already exists
+    c.execute('ALTER TABLE leads ADD COLUMN IF NOT EXISTS survey_planning_time TEXT')
+    c.execute('ALTER TABLE leads ADD COLUMN IF NOT EXISTS survey_currently_trying TEXT')
+    c.execute('ALTER TABLE leads ADD COLUMN IF NOT EXISTS survey_specialist TEXT')
+    c.execute('ALTER TABLE leads ADD COLUMN IF NOT EXISTS survey_challenge TEXT')
+    c.execute('ALTER TABLE leads ADD COLUMN IF NOT EXISTS survey_early_access TEXT')
     
     c.execute('''
         CREATE TABLE IF NOT EXISTS visitor_analytics (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             session_id TEXT NOT NULL,
             event_type TEXT NOT NULL,
             event_data TEXT,
@@ -101,7 +99,7 @@ def init_db():
 
     c.execute('''
         CREATE TABLE IF NOT EXISTS lead_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             lead_id TEXT NOT NULL,
             event_type TEXT NOT NULL,
             description TEXT,
@@ -112,7 +110,7 @@ def init_db():
     
     c.execute('''
         CREATE TABLE IF NOT EXISTS submission_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             email TEXT,
             ip_address TEXT,
             status TEXT,
@@ -123,7 +121,7 @@ def init_db():
 
     c.execute('''
         CREATE TABLE IF NOT EXISTS email_queue (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             to_email TEXT NOT NULL,
             subject TEXT NOT NULL,
             body TEXT NOT NULL,
@@ -151,9 +149,9 @@ def init_db():
         )
     ''')
     
-    c.execute('SELECT id FROM admins WHERE email = ?', ('k.r.dhyan9894@gmail.com',))
+    c.execute('SELECT id FROM admins WHERE email = %s', ('k.r.dhyan9894@gmail.com',))
     if not c.fetchone():
-        c.execute('INSERT INTO admins (id, email, password_hash) VALUES (?, ?, ?)',
+        c.execute('INSERT INTO admins (id, email, password_hash) VALUES (%s, %s, %s)',
                   (str(uuid.uuid4()), 'k.r.dhyan9894@gmail.com', hash_password('dhyan369')))
                   
     c.execute('CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email)')
@@ -184,9 +182,9 @@ def parse_user_agent(ua_string):
 
 def log_attempt(email, ip_address, status, error_message=''):
     try:
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db_connection()
         c = conn.cursor()
-        c.execute('INSERT INTO submission_logs (email, ip_address, status, error_message) VALUES (?, ?, ?, ?)',
+        c.execute('INSERT INTO submission_logs (email, ip_address, status, error_message) VALUES (%s, %s, %s, %s)',
                   (email, ip_address, status, error_message))
         conn.commit()
         conn.close()
@@ -195,13 +193,12 @@ def log_attempt(email, ip_address, status, error_message=''):
 def email_worker():
     while True:
         try:
-            conn = sqlite3.connect(DB_FILE)
-            conn.row_factory = sqlite3.Row
-            c = conn.cursor()
+            conn = get_db_connection()
+                        c = conn.cursor()
             
             c.execute('''
                 SELECT * FROM email_queue 
-                WHERE status != 'Sent' AND retries < 5 AND next_retry_at <= ?
+                WHERE status != 'Sent' AND retries < 5 AND next_retry_at <= %s
             ''', (datetime.now().isoformat(),))
             
             emails = c.fetchall()
@@ -221,13 +218,13 @@ def email_worker():
                     server.send_message(msg)
                     server.quit()
                     
-                    c.execute("UPDATE email_queue SET status = 'Sent', error_log = 'Success' WHERE id = ?", (task_id,))
+                    c.execute("UPDATE email_queue SET status = 'Sent', error_log = 'Success' WHERE id = %s", (task_id,))
                 except Exception as e:
                     next_retry = datetime.now() + timedelta(minutes=2 ** task['retries'])
                     c.execute('''
                         UPDATE email_queue 
-                        SET status = 'Failed', retries = retries + 1, error_log = ?, next_retry_at = ?
-                        WHERE id = ?
+                        SET status = 'Failed', retries = retries + 1, error_log = %s, next_retry_at = ?
+                        WHERE id = %s
                     ''', (str(e), next_retry.isoformat(), task_id))
             conn.commit()
             conn.close()
@@ -241,9 +238,9 @@ class handler(http.server.BaseHTTPRequestHandler):
         auth_header = self.headers.get('Authorization', '')
         if not auth_header.startswith('Bearer '): return None
         token = auth_header.split(' ')[1]
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db_connection()
         c = conn.cursor()
-        c.execute('SELECT admin_id, expires_at FROM admin_sessions WHERE token = ?', (token,))
+        c.execute('SELECT admin_id, expires_at FROM admin_sessions WHERE token = %s', (token,))
         row = c.fetchone()
         conn.close()
         if not row: return None
@@ -264,9 +261,8 @@ class handler(http.server.BaseHTTPRequestHandler):
             admin_id = self.get_session_admin()
             if not admin_id: return self.send_json(401, {'error': 'Unauthorized'})
             
-            conn = sqlite3.connect(DB_FILE)
-            conn.row_factory = sqlite3.Row
-            c = conn.cursor()
+            conn = get_db_connection()
+                        c = conn.cursor()
             
             if path == '/api/admin/dashboard':
                 # Real Analytics
@@ -328,13 +324,13 @@ class handler(http.server.BaseHTTPRequestHandler):
                 status_filter = qs.get('status', [''])[0]
                 show_archived = qs.get('archived', ['0'])[0] == '1'
                 
-                query = "SELECT * FROM leads WHERE is_archived = ?"
+                query = "SELECT * FROM leads WHERE is_archived = %s"
                 params = [1 if show_archived else 0]
                 if search:
-                    query += " AND (full_name LIKE ? OR email LIKE ?)"
+                    query += " AND (full_name ILIKE %s OR email ILIKE %s)"
                     params.extend([f"%{search}%", f"%{search}%"])
                 if status_filter:
-                    query += " AND lead_status = ?"
+                    query += " AND lead_status = %s"
                     params.append(status_filter)
                 
                 query += " ORDER BY created_at DESC"
@@ -345,17 +341,17 @@ class handler(http.server.BaseHTTPRequestHandler):
                 
             elif path.startswith('/api/admin/leads/') and not path.endswith('/events'):
                 lead_id = path.split('/')[-1]
-                c.execute('SELECT * FROM leads WHERE id = ?', (lead_id,))
+                c.execute('SELECT * FROM leads WHERE id = %s', (lead_id,))
                 lead = c.fetchone()
                 if not lead:
                     conn.close()
                     return self.send_json(404, {'error': 'Not found'})
                 
-                c.execute('INSERT INTO lead_events (lead_id, event_type, description, admin_id) VALUES (?, ?, ?, ?)',
+                c.execute('INSERT INTO lead_events (lead_id, event_type, description, admin_id) VALUES (%s, %s, %s, %s)',
                           (lead_id, 'Admin Viewed', 'Admin viewed lead profile', admin_id))
                 conn.commit()
                 
-                c.execute('SELECT * FROM lead_events WHERE lead_id = ? ORDER BY created_at DESC', (lead_id,))
+                c.execute('SELECT * FROM lead_events WHERE lead_id = %s ORDER BY created_at DESC', (lead_id,))
                 events = [dict(row) for row in c.fetchall()]
                 conn.close()
                 
@@ -376,19 +372,19 @@ class handler(http.server.BaseHTTPRequestHandler):
                 params = []
                 
                 if start_date:
-                    query += " AND date(created_at) >= ?"
+                    query += " AND date(created_at) >= %s"
                     params.append(start_date)
                 if end_date:
-                    query += " AND date(created_at) <= ?"
+                    query += " AND date(created_at) <= %s"
                     params.append(end_date)
                 if campaign:
-                    query += " AND utm_campaign LIKE ?"
+                    query += " AND utm_campaign ILIKE %s"
                     params.append(f"%{campaign}%")
                 if status:
-                    query += " AND lead_status = ?"
+                    query += " AND lead_status = %s"
                     params.append(status)
                 if source:
-                    query += " AND form_source = ?"
+                    query += " AND form_source = %s"
                     params.append(source)
                     
                 query += " ORDER BY created_at DESC"
@@ -463,7 +459,7 @@ class handler(http.server.BaseHTTPRequestHandler):
             ua_string = self.headers.get('User-Agent', '')
             device_type, browser, operating_system = parse_user_agent(ua_string)
             
-            conn = sqlite3.connect(DB_FILE, timeout=10)
+            conn = get_db_connection()
             c = conn.cursor()
             c.executemany('''
                 INSERT INTO visitor_analytics 
@@ -477,14 +473,14 @@ class handler(http.server.BaseHTTPRequestHandler):
         elif path == '/api/admin/login':
             email = data.get('email')
             password = data.get('password')
-            conn = sqlite3.connect(DB_FILE)
+            conn = get_db_connection()
             c = conn.cursor()
-            c.execute('SELECT id FROM admins WHERE email = ? AND password_hash = ?', (email, hash_password(password)))
+            c.execute('SELECT id FROM admins WHERE email = %s AND password_hash = %s', (email, hash_password(password)))
             row = c.fetchone()
             if row:
                 token = str(uuid.uuid4())
                 expires = datetime.now() + timedelta(days=1)
-                c.execute('INSERT INTO admin_sessions (token, admin_id, expires_at) VALUES (?, ?, ?)',
+                c.execute('INSERT INTO admin_sessions (token, admin_id, expires_at) VALUES (%s, %s, %s)',
                           (token, row[0], expires.isoformat()))
                 conn.commit()
                 conn.close()
@@ -497,9 +493,9 @@ class handler(http.server.BaseHTTPRequestHandler):
             auth_header = self.headers.get('Authorization', '')
             if auth_header.startswith('Bearer '):
                 token = auth_header.split(' ')[1]
-                conn = sqlite3.connect(DB_FILE)
+                conn = get_db_connection()
                 c = conn.cursor()
-                c.execute('DELETE FROM admin_sessions WHERE token = ?', (token,))
+                c.execute('DELETE FROM admin_sessions WHERE token = %s', (token,))
                 conn.commit()
                 conn.close()
             return self.send_json(200, {'success': True})
@@ -512,9 +508,9 @@ class handler(http.server.BaseHTTPRequestHandler):
             event_type = data.get('event_type')
             desc = data.get('description')
             
-            conn = sqlite3.connect(DB_FILE)
+            conn = get_db_connection()
             c = conn.cursor()
-            c.execute('INSERT INTO lead_events (lead_id, event_type, description, admin_id) VALUES (?, ?, ?, ?)',
+            c.execute('INSERT INTO lead_events (lead_id, event_type, description, admin_id) VALUES (%s, %s, %s, %s)',
                       (lead_id, event_type, desc, admin_id))
             conn.commit()
             conn.close()
@@ -548,10 +544,10 @@ class handler(http.server.BaseHTTPRequestHandler):
                     log_attempt(email, ip_address, 'Error', 'Email is required')
                     return self.send_json(400, {'error': 'Email is required'})
                 
-                conn = sqlite3.connect(DB_FILE)
+                conn = get_db_connection()
                 c = conn.cursor()
                 
-                c.execute('SELECT id FROM leads WHERE email = ?', (email,))
+                c.execute('SELECT id FROM leads WHERE email = %s', (email,))
                 if c.fetchone():
                     log_attempt(email, ip_address, 'Duplicate', 'This email is already registered')
                     conn.close()
@@ -563,7 +559,7 @@ class handler(http.server.BaseHTTPRequestHandler):
                         id, full_name, email, whatsapp_number, form_source,
                         landing_page_url, utm_source, utm_medium, utm_campaign, utm_content, utm_term, referrer_url,
                         ip_address, device_type, browser, operating_system
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ''', (
                     lead_id, full_name, email, whatsapp_number, form_source,
                     data.get('landing_page_url', ''), data.get('utm_source', ''), data.get('utm_medium', ''),
@@ -571,7 +567,7 @@ class handler(http.server.BaseHTTPRequestHandler):
                     data.get('referrer_url', ''), ip_address, device_type, browser, operating_system
                 ))
                 
-                c.execute('INSERT INTO lead_events (lead_id, event_type, description) VALUES (?, ?, ?)',
+                c.execute('INSERT INTO lead_events (lead_id, event_type, description) VALUES (%s, %s, %s)',
                           (lead_id, 'Lead Created', f"Lead submitted via {form_source}"))
                 
                 # --- SYNCHRONOUS EMAIL SENDING FOR VERCEL ---
@@ -618,25 +614,25 @@ class handler(http.server.BaseHTTPRequestHandler):
         elif path.startswith('/api/leads/') and path.endswith('/survey'):
             lead_id = path.split('/')[3]
             try:
-                conn = sqlite3.connect(DB_FILE, timeout=10)
+                conn = get_db_connection()
                 c = conn.cursor()
                 
                 c.execute('''
                     UPDATE leads SET
-                        survey_planning_time = ?,
-                        survey_currently_trying = ?,
-                        survey_specialist = ?,
-                        survey_challenge = ?,
-                        survey_early_access = ?,
+                        survey_planning_time = %s,
+                        survey_currently_trying = %s,
+                        survey_specialist = %s,
+                        survey_challenge = %s,
+                        survey_early_access = %s,
                         updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
+                    WHERE id = %s
                 ''', (
                     data.get('planning_time'), data.get('currently_trying'), 
                     data.get('specialist'), data.get('challenge'), 
                     data.get('early_access'), lead_id
                 ))
                 
-                c.execute('INSERT INTO lead_events (lead_id, event_type, description) VALUES (?, ?, ?)',
+                c.execute('INSERT INTO lead_events (lead_id, event_type, description) VALUES (%s, %s, %s)',
                           (lead_id, 'Survey Completed', "Visitor completed the optional qualification survey."))
                           
                 conn.commit()
@@ -656,29 +652,28 @@ class handler(http.server.BaseHTTPRequestHandler):
             content_length = int(self.headers.get('Content-Length', 0))
             data = json.loads(self.rfile.read(content_length).decode('utf-8'))
             
-            conn = sqlite3.connect(DB_FILE)
-            conn.row_factory = sqlite3.Row
-            c = conn.cursor()
+            conn = get_db_connection()
+                        c = conn.cursor()
             
-            c.execute('SELECT * FROM leads WHERE id = ?', (lead_id,))
+            c.execute('SELECT * FROM leads WHERE id = %s', (lead_id,))
             old_lead = dict(c.fetchone())
             
             status = data.get('lead_status', old_lead['lead_status'])
             priority = data.get('priority', old_lead['priority'])
             is_archived = data.get('is_archived', old_lead['is_archived'])
             
-            c.execute('UPDATE leads SET lead_status = ?, priority = ?, is_archived = ?, updated_at = ? WHERE id = ?',
+            c.execute('UPDATE leads SET lead_status = %s, priority = %s, is_archived = %s, updated_at = %s WHERE id = %s',
                       (status, priority, is_archived, datetime.now().isoformat(), lead_id))
             
             if status != old_lead['lead_status']:
-                c.execute('INSERT INTO lead_events (lead_id, event_type, description, admin_id) VALUES (?, ?, ?, ?)',
+                c.execute('INSERT INTO lead_events (lead_id, event_type, description, admin_id) VALUES (%s, %s, %s, %s)',
                           (lead_id, 'Status Updated', f"Status changed from {old_lead['lead_status']} to {status}", admin_id))
             if priority != old_lead['priority']:
-                c.execute('INSERT INTO lead_events (lead_id, event_type, description, admin_id) VALUES (?, ?, ?, ?)',
+                c.execute('INSERT INTO lead_events (lead_id, event_type, description, admin_id) VALUES (%s, %s, %s, %s)',
                           (lead_id, 'Priority Updated', f"Priority changed from {old_lead['priority']} to {priority}", admin_id))
             if is_archived != old_lead['is_archived']:
                 desc = "Lead Archived" if is_archived == 1 else "Lead Restored"
-                c.execute('INSERT INTO lead_events (lead_id, event_type, description, admin_id) VALUES (?, ?, ?, ?)',
+                c.execute('INSERT INTO lead_events (lead_id, event_type, description, admin_id) VALUES (%s, %s, %s, %s)',
                           (lead_id, 'Archive Status', desc, admin_id))
             
             conn.commit()
@@ -693,10 +688,10 @@ class handler(http.server.BaseHTTPRequestHandler):
             if not admin_id: return self.send_json(401, {'error': 'Unauthorized'})
             
             lead_id = path.split('/')[-1]
-            conn = sqlite3.connect(DB_FILE)
+            conn = get_db_connection()
             c = conn.cursor()
-            c.execute('DELETE FROM leads WHERE id = ?', (lead_id,))
-            c.execute('DELETE FROM lead_events WHERE lead_id = ?', (lead_id,))
+            c.execute('DELETE FROM leads WHERE id = %s', (lead_id,))
+            c.execute('DELETE FROM lead_events WHERE lead_id = %s', (lead_id,))
             conn.commit()
             conn.close()
             return self.send_json(200, {'success': True})
