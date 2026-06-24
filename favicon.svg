@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <circle cx="50" cy="50" r="50" fill="#1B3A2D"/>
+  <circle cx="50" cy="50" r="40" fill="none" stroke="#C4923B" stroke-width="3"/>
+  <text x="50" y="68" font-family="serif" font-size="56" fill="#C4923B" text-anchor="middle" font-style="italic">O</text>
+</svg>
