@@ -12,6 +12,10 @@
     {
       "src": "admin/index.html",
       "use": "@vercel/static"
+    },
+    {
+      "src": "*.svg",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
