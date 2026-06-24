@@ -265,119 +265,120 @@ class handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(data, default=str).encode())
 
     def do_GET(self):
-        parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path
-        
-        if path.startswith('/api/admin/'):
-            admin_id = self.get_session_admin()
-            if not admin_id: return self.send_json(401, {'error': 'Unauthorized'})
+        try:
+            parsed = urllib.parse.urlparse(self.path)
+            path = parsed.path
             
-            conn = get_db_connection()
-            c = conn.cursor()
-            
-            if path == '/api/admin/dashboard':
-                # Real Analytics
-                c.execute('SELECT COUNT(DISTINCT session_id) as count FROM visitor_analytics')
-                total_visitors = c.fetchone()['count']
+                if path.startswith('/api/admin/'):
+                admin_id = self.get_session_admin()
+                if not admin_id: return self.send_json(401, {'error': 'Unauthorized'})
                 
-                c.execute('SELECT COUNT(*) as count FROM leads WHERE is_archived = 0')
-                total_leads = c.fetchone()['count']
+                conn = get_db_connection()
+                c = conn.cursor()
                 
-                conv_rate = round((total_leads / total_visitors) * 100, 1) if total_visitors > 0 else 0
-                
-                c.execute("SELECT AVG(CAST(event_data AS INTEGER)) as avg_time FROM visitor_analytics WHERE event_type = 'Time on Page'")
-                avg_time_row = c.fetchone()
-                avg_time = round(avg_time_row['avg_time'] or 0)
-                
-                c.execute("SELECT COUNT(*) as bounces FROM visitor_analytics WHERE event_type = 'Bounce'")
-                bounces = c.fetchone()['bounces']
-                bounce_rate = round((bounces / total_visitors) * 100, 1) if total_visitors > 0 else 0
-                
-                c.execute("SELECT event_data, COUNT(*) as c FROM visitor_analytics WHERE event_type = 'CTA Button Click' GROUP BY event_data ORDER BY c DESC LIMIT 1")
-                top_cta_row = c.fetchone()
-                top_cta = top_cta_row['event_data'] if top_cta_row else 'None'
-                
-                c.execute("SELECT form_source, COUNT(*) as c FROM leads GROUP BY form_source ORDER BY c DESC LIMIT 1")
-                top_form_row = c.fetchone()
-                top_form = top_form_row['form_source'] if top_form_row else 'None'
-                
-                c.execute("SELECT form_source, COUNT(*) as count FROM leads WHERE is_archived = 0 GROUP BY form_source")
-                sources = {row['form_source']: row['count'] for row in c.fetchall()}
-                
-                c.execute("SELECT lead_status, COUNT(*) as count FROM leads WHERE is_archived = 0 GROUP BY lead_status")
-                statuses = {row['lead_status']: row['count'] for row in c.fetchall()}
-                
-                # Daily Trend (Last 7 days)
-                c.execute('''
-                    SELECT DATE(created_at) as date, COUNT(*) as count 
-                    FROM leads WHERE is_archived = 0 
-                    GROUP BY DATE(created_at) ORDER BY date DESC LIMIT 7
-                ''')
-                daily_trend = {str(row['date']): row['count'] for row in reversed(c.fetchall())}
-                
-                conn.close()
-                return self.send_json(200, {
-                    'total_visitors': total_visitors,
-                    'total_leads': total_leads,
-                    'conversion_rate': conv_rate,
-                    'avg_time_seconds': avg_time,
-                    'bounce_rate': bounce_rate,
-                    'most_clicked_cta': top_cta,
-                    'most_successful_form': top_form,
-                    'sources': sources,
-                    'statuses': statuses,
-                    'daily_trend': daily_trend
-                })
-                
-            elif path == '/api/admin/leads':
-                qs = urllib.parse.parse_qs(parsed.query)
-                search = qs.get('search', [''])[0]
-                status_filter = qs.get('status', [''])[0]
-                show_archived = qs.get('archived', ['0'])[0] == '1'
-                
-                query = "SELECT * FROM leads WHERE is_archived = %s"
-                params = [1 if show_archived else 0]
-                if search:
-                    query += " AND (full_name ILIKE %s OR email ILIKE %s)"
-                    params.extend([f"%{search}%", f"%{search}%"])
-                if status_filter:
-                    query += " AND lead_status = %s"
-                    params.append(status_filter)
-                
-                query += " ORDER BY created_at DESC"
-                c.execute(query, params)
-                leads = [dict(row) for row in c.fetchall()]
-                conn.close()
-                return self.send_json(200, {'leads': leads})
-                
-            elif path.startswith('/api/admin/leads/') and not path.endswith('/events'):
-                lead_id = path.split('/')[-1]
-                c.execute('SELECT * FROM leads WHERE id = %s', (lead_id,))
-                lead = c.fetchone()
-                if not lead:
+                if path == '/api/admin/dashboard':
+                    # Real Analytics
+                    c.execute('SELECT COUNT(DISTINCT session_id) as count FROM visitor_analytics')
+                    total_visitors = c.fetchone()['count']
+                    
+                    c.execute('SELECT COUNT(*) as count FROM leads WHERE is_archived = 0')
+                    total_leads = c.fetchone()['count']
+                    
+                    conv_rate = round((total_leads / total_visitors) * 100, 1) if total_visitors > 0 else 0
+                    
+                    c.execute("SELECT AVG(CAST(event_data AS INTEGER)) as avg_time FROM visitor_analytics WHERE event_type = 'Time on Page'")
+                    avg_time_row = c.fetchone()
+                    avg_time = round(avg_time_row['avg_time'] or 0)
+                    
+                    c.execute("SELECT COUNT(*) as bounces FROM visitor_analytics WHERE event_type = 'Bounce'")
+                    bounces = c.fetchone()['bounces']
+                    bounce_rate = round((bounces / total_visitors) * 100, 1) if total_visitors > 0 else 0
+                    
+                    c.execute("SELECT event_data, COUNT(*) as c FROM visitor_analytics WHERE event_type = 'CTA Button Click' GROUP BY event_data ORDER BY c DESC LIMIT 1")
+                    top_cta_row = c.fetchone()
+                    top_cta = top_cta_row['event_data'] if top_cta_row else 'None'
+                    
+                    c.execute("SELECT form_source, COUNT(*) as c FROM leads GROUP BY form_source ORDER BY c DESC LIMIT 1")
+                    top_form_row = c.fetchone()
+                    top_form = top_form_row['form_source'] if top_form_row else 'None'
+                    
+                    c.execute("SELECT form_source, COUNT(*) as count FROM leads WHERE is_archived = 0 GROUP BY form_source")
+                    sources = {row['form_source']: row['count'] for row in c.fetchall()}
+                    
+                    c.execute("SELECT lead_status, COUNT(*) as count FROM leads WHERE is_archived = 0 GROUP BY lead_status")
+                    statuses = {row['lead_status']: row['count'] for row in c.fetchall()}
+                    
+                    # Daily Trend (Last 7 days)
+                    c.execute('''
+                        SELECT DATE(created_at) as date, COUNT(*) as count 
+                        FROM leads WHERE is_archived = 0 
+                        GROUP BY DATE(created_at) ORDER BY date DESC LIMIT 7
+                    ''')
+                    daily_trend = {str(row['date']): row['count'] for row in reversed(c.fetchall())}
+                    
                     conn.close()
-                    return self.send_json(404, {'error': 'Not found'})
-                
-                c.execute('INSERT INTO lead_events (lead_id, event_type, description, admin_id) VALUES (%s, %s, %s, %s)',
-                          (lead_id, 'Admin Viewed', 'Admin viewed lead profile', admin_id))
-                conn.commit()
-                
-                c.execute('SELECT * FROM lead_events WHERE lead_id = %s ORDER BY created_at DESC', (lead_id,))
-                events = [dict(row) for row in c.fetchall()]
-                conn.close()
-                
-                lead_dict = dict(lead)
-                lead_dict['timeline'] = events
-                return self.send_json(200, lead_dict)
-                
-            elif path == '/api/admin/export':
-                qs = urllib.parse.parse_qs(parsed.query)
-                start_date = qs.get('start_date', [''])[0]
-                end_date = qs.get('end_date', [''])[0]
-                campaign = qs.get('campaign', [''])[0]
-                status = qs.get('status', [''])[0]
-                source = qs.get('source', [''])[0]
-                export_format = qs.get('format', ['csv'])[0]
+                    return self.send_json(200, {
+                        'total_visitors': total_visitors,
+                        'total_leads': total_leads,
+                        'conversion_rate': conv_rate,
+                        'avg_time_seconds': avg_time,
+                        'bounce_rate': bounce_rate,
+                        'most_clicked_cta': top_cta,
+                        'most_successful_form': top_form,
+                        'sources': sources,
+                        'statuses': statuses,
+                        'daily_trend': daily_trend
+                    })
+                    
+                elif path == '/api/admin/leads':
+                    qs = urllib.parse.parse_qs(parsed.query)
+                    search = qs.get('search', [''])[0]
+                    status_filter = qs.get('status', [''])[0]
+                    show_archived = qs.get('archived', ['0'])[0] == '1'
+                    
+                    query = "SELECT * FROM leads WHERE is_archived = %s"
+                    params = [1 if show_archived else 0]
+                    if search:
+                        query += " AND (full_name ILIKE %s OR email ILIKE %s)"
+                        params.extend([f"%{search}%", f"%{search}%"])
+                    if status_filter:
+                        query += " AND lead_status = %s"
+                        params.append(status_filter)
+                    
+                    query += " ORDER BY created_at DESC"
+                    c.execute(query, params)
+                    leads = [dict(row) for row in c.fetchall()]
+                    conn.close()
+                    return self.send_json(200, {'leads': leads})
+                    
+                elif path.startswith('/api/admin/leads/') and not path.endswith('/events'):
+                    lead_id = path.split('/')[-1]
+                    c.execute('SELECT * FROM leads WHERE id = %s', (lead_id,))
+                    lead = c.fetchone()
+                    if not lead:
+                        conn.close()
+                        return self.send_json(404, {'error': 'Not found'})
+                    
+                    c.execute('INSERT INTO lead_events (lead_id, event_type, description, admin_id) VALUES (%s, %s, %s, %s)',
+                              (lead_id, 'Admin Viewed', 'Admin viewed lead profile', admin_id))
+                    conn.commit()
+                    
+                    c.execute('SELECT * FROM lead_events WHERE lead_id = %s ORDER BY created_at DESC', (lead_id,))
+                    events = [dict(row) for row in c.fetchall()]
+                    conn.close()
+                    
+                    lead_dict = dict(lead)
+                    lead_dict['timeline'] = events
+                    return self.send_json(200, lead_dict)
+                    
+                elif path == '/api/admin/export':
+                    qs = urllib.parse.parse_qs(parsed.query)
+                    start_date = qs.get('start_date', [''])[0]
+                    end_date = qs.get('end_date', [''])[0]
+                    campaign = qs.get('campaign', [''])[0]
+                    status = qs.get('status', [''])[0]
+                    source = qs.get('source', [''])[0]
+                    export_format = qs.get('format', ['csv'])[0]
                 
                 query = "SELECT * FROM leads WHERE 1=1"
                 params = []
@@ -448,8 +449,8 @@ class handler(http.server.BaseHTTPRequestHandler):
                 
             conn.close()
             return self.send_json(404, {'error': 'Not found'})
-            
-        return self.send_json(404, {'error': 'Not found'})
+        except Exception as e:
+            return self.send_json(500, {'error': f'do_GET Error: {str(e)}'})
 
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
