@@ -255,7 +255,9 @@ class handler(http.server.BaseHTTPRequestHandler):
         row = c.fetchone()
         conn.close()
         if not row: return None
-        if datetime.now() > datetime.fromisoformat(row['expires_at']): return None
+        exp = row['expires_at']
+        if isinstance(exp, str): exp = datetime.fromisoformat(exp)
+        if datetime.now() > exp: return None
         return row['admin_id']
 
     def send_json(self, status, data):
