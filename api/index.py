@@ -475,7 +475,7 @@ class handler(http.server.BaseHTTPRequestHandler):
             c.executemany('''
                 INSERT INTO visitor_analytics 
                 (session_id, event_type, event_data, ip_address, device_type, browser, operating_system) 
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
             ''', [(session_id, ev.get('type', 'Unknown'), ev.get('data', ''), ip_address, device_type, browser, operating_system) for ev in events])
             conn.commit()
             conn.close()
@@ -484,21 +484,24 @@ class handler(http.server.BaseHTTPRequestHandler):
         elif path == '/api/admin/login':
             email = data.get('email')
             password = data.get('password')
-            conn = get_db_connection()
-            c = conn.cursor()
-            c.execute('SELECT id FROM admins WHERE email = %s AND password_hash = %s', (email, hash_password(password)))
-            row = c.fetchone()
-            if row:
-                token = str(uuid.uuid4())
-                expires = datetime.now() + timedelta(days=1)
-                c.execute('INSERT INTO admin_sessions (token, admin_id, expires_at) VALUES (%s, %s, %s)',
-                          (token, row[0], expires.isoformat()))
-                conn.commit()
-                conn.close()
-                return self.send_json(200, {'token': token})
-            else:
-                conn.close()
-                return self.send_json(401, {'error': 'Invalid credentials'})
+            try:
+                conn = get_db_connection()
+                c = conn.cursor()
+                c.execute('SELECT id FROM admins WHERE email = %s AND password_hash = %s', (email, hash_password(password)))
+                row = c.fetchone()
+                if row:
+                    token = str(uuid.uuid4())
+                    expires = datetime.now() + timedelta(days=1)
+                    c.execute('INSERT INTO admin_sessions (token, admin_id, expires_at) VALUES (%s, %s, %s)',
+                              (token, row['id'] if isinstance(row, dict) else row[0], expires.isoformat()))
+                    conn.commit()
+                    conn.close()
+                    return self.send_json(200, {'token': token})
+                else:
+                    conn.close()
+                    return self.send_json(401, {'error': 'Invalid credentials'})
+            except Exception as e:
+                return self.send_json(500, {'error': f'Database error: {str(e)}'})
                 
         elif path == '/api/admin/logout':
             auth_header = self.headers.get('Authorization', '')
