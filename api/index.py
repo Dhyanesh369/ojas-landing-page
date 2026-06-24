@@ -21,9 +21,20 @@ IP_RATE_LIMIT = {}
 
 PORT = 8000
 def get_db_connection():
-    postgres_url = os.environ.get('POSTGRES_URL') or os.environ.get('DATABASE_URL')
+    # Vercel Supabase inserts custom parameters like ?supa=... which crashes psycopg2.
+    # We prioritize the NON_POOLING url which is a standard connection string.
+    postgres_url = os.environ.get('POSTGRES_URL_NON_POOLING') or os.environ.get('POSTGRES_URL') or os.environ.get('DATABASE_URL')
+    
     if postgres_url:
+        # Strip unsupported query parameters to prevent "INVALID URI QUERY PARAMETER" errors
+        if '?' in postgres_url:
+            base_url, query = postgres_url.split('?', 1)
+            # Only keep standard psycopg2 parameters like sslmode
+            safe_params = [p for p in query.split('&') if p.startswith('sslmode=')]
+            postgres_url = base_url + ('?' + '&'.join(safe_params) if safe_params else '')
+            
         return psycopg2.connect(postgres_url, cursor_factory=RealDictCursor)
+        
     raise Exception('POSTGRES_URL environment variable is missing!')
 
 
