@@ -313,7 +313,7 @@ class handler(http.server.BaseHTTPRequestHandler):
                     FROM leads WHERE is_archived = 0 
                     GROUP BY DATE(created_at) ORDER BY date DESC LIMIT 7
                 ''')
-                daily_trend = {row['date']: row['count'] for row in reversed(c.fetchall())}
+                daily_trend = {str(row['date']): row['count'] for row in reversed(c.fetchall())}
                 
                 conn.close()
                 return self.send_json(200, {
