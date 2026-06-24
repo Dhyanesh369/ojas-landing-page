@@ -194,7 +194,7 @@ def email_worker():
     while True:
         try:
             conn = get_db_connection()
-                        c = conn.cursor()
+            c = conn.cursor()
             
             c.execute('''
                 SELECT * FROM email_queue 
@@ -262,7 +262,7 @@ class handler(http.server.BaseHTTPRequestHandler):
             if not admin_id: return self.send_json(401, {'error': 'Unauthorized'})
             
             conn = get_db_connection()
-                        c = conn.cursor()
+            c = conn.cursor()
             
             if path == '/api/admin/dashboard':
                 # Real Analytics
@@ -653,7 +653,7 @@ class handler(http.server.BaseHTTPRequestHandler):
             data = json.loads(self.rfile.read(content_length).decode('utf-8'))
             
             conn = get_db_connection()
-                        c = conn.cursor()
+            c = conn.cursor()
             
             c.execute('SELECT * FROM leads WHERE id = %s', (lead_id,))
             old_lead = dict(c.fetchone())
