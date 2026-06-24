@@ -269,7 +269,7 @@ class handler(http.server.BaseHTTPRequestHandler):
             parsed = urllib.parse.urlparse(self.path)
             path = parsed.path
             
-                if path.startswith('/api/admin/'):
+            if path.startswith('/api/admin/'):
                 admin_id = self.get_session_admin()
                 if not admin_id: return self.send_json(401, {'error': 'Unauthorized'})
                 
