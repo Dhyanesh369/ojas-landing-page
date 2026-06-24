@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 import logging
 import html
 
-logging.basicConfig(filename='app.log', level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 IP_RATE_LIMIT = {}
 
 PORT = 8000
@@ -455,7 +455,7 @@ class handler(http.server.BaseHTTPRequestHandler):
             if not session_id or not events:
                 return self.send_json(400, {'error': 'Missing data'})
                 
-            ip_address = self.client_address[0]
+            ip_address = self.headers.get('x-forwarded-for', '127.0.0.1').split(',')[0].strip()
             ua_string = self.headers.get('User-Agent', '')
             device_type, browser, operating_system = parse_user_agent(ua_string)
             
@@ -517,7 +517,7 @@ class handler(http.server.BaseHTTPRequestHandler):
             return self.send_json(200, {'success': True})
             
         elif path == '/api/leads':
-            ip_address = self.client_address[0]
+            ip_address = self.headers.get('x-forwarded-for', '127.0.0.1').split(',')[0].strip()
             
             # Rate limiting: max 5 requests per minute per IP
             now = time.time()
@@ -696,5 +696,8 @@ class handler(http.server.BaseHTTPRequestHandler):
             conn.close()
             return self.send_json(200, {'success': True})
 
-# Initialize DB strictly on module load for Vercel
-init_db()
+# Initialize DB safely on module load for Vercel
+try:
+    init_db()
+except Exception as e:
+    logging.error(f"Failed to initialize database on startup: {str(e)}")
