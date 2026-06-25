@@ -682,6 +682,22 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             conn.commit()
             conn.close()
             return self.send_json(200, {'success': True})
+            
+        elif path == '/api/admin/reset':
+            admin_id = self.get_session_admin()
+            if not admin_id: return self.send_json(401, {'error': 'Unauthorized'})
+            
+            conn = sqlite3.connect(DB_FILE)
+            c = conn.cursor()
+            
+            c.execute('DELETE FROM visitor_analytics')
+            c.execute('DELETE FROM leads')
+            c.execute('DELETE FROM lead_events')
+            c.execute('DELETE FROM submission_logs')
+            
+            conn.commit()
+            conn.close()
+            return self.send_json(200, {'success': True})
 
 if __name__ == '__main__':
     init_db()

@@ -133,7 +133,10 @@
     <div class="main-content">
         <div class="header">
             <h2 id="page-title">Analytics Dashboard</h2>
-            <div><button class="btn" onclick="openExportModal()">Export Data</button></div>
+            <div style="display: flex; gap: 8px;">
+                <button class="btn btn-danger" onclick="resetDashboard()">Reset Dashboard</button>
+                <button class="btn" onclick="openExportModal()">Export Data</button>
+            </div>
         </div>
         
         <div class="content-body" id="view-dashboard">
@@ -565,6 +568,22 @@ function openExportModal() {
 
 function closeExportModal() {
     document.getElementById('export-modal').style.display = 'none';
+}
+
+async function resetDashboard() {
+    if(confirm('Are you sure you want to reset all analytics and lead data? This will give you a completely fresh dashboard and cannot be undone.')) {
+        try {
+            await apiCall('/api/admin/reset', { method: 'DELETE' });
+            alert('Dashboard reset successfully.');
+            if(document.getElementById('view-dashboard').style.display !== 'none') {
+                loadDashboard();
+            } else {
+                loadLeads();
+            }
+        } catch(e) {
+            alert('Error resetting dashboard: ' + e.message);
+        }
+    }
 }
 
 async function executeExport() {
