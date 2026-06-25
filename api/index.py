@@ -722,6 +722,20 @@ class handler(http.server.BaseHTTPRequestHandler):
             conn.commit()
             conn.close()
             return self.send_json(200, {'success': True})
+            
+        elif path == '/api/admin/reset':
+            admin_id = self.get_session_admin()
+            if not admin_id: return self.send_json(401, {'error': 'Unauthorized'})
+            
+            conn = get_db_connection()
+            c = conn.cursor()
+            c.execute('DELETE FROM visitor_analytics')
+            c.execute('DELETE FROM leads')
+            c.execute('DELETE FROM lead_events')
+            c.execute('DELETE FROM submission_logs')
+            conn.commit()
+            conn.close()
+            return self.send_json(200, {'success': True})
 
 # Initialize DB safely on module load for Vercel
 try:
