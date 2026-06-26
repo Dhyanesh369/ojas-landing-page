@@ -475,7 +475,7 @@ class handler(http.server.BaseHTTPRequestHandler):
             if not session_id or not events:
                 return self.send_json(400, {'error': 'Missing data'})
                 
-            ip_address = self.headers.get('x-forwarded-for', '127.0.0.1').split(',')[0].strip()
+            ip_address = self.headers.get('x-real-ip', self.headers.get('x-forwarded-for', '127.0.0.1')).split(',')[-1].strip()
             ua_string = self.headers.get('User-Agent', '')
             device_type, browser, operating_system = parse_user_agent(ua_string)
             
@@ -491,7 +491,7 @@ class handler(http.server.BaseHTTPRequestHandler):
             return self.send_json(200, {'success': True})
             
         elif path == '/api/admin/login':
-            ip_address = self.headers.get('x-forwarded-for', '127.0.0.1').split(',')[0].strip()
+            ip_address = self.headers.get('x-real-ip', self.headers.get('x-forwarded-for', '127.0.0.1')).split(',')[-1].strip()
             now = time.time()
             if ip_address in LOGIN_RATE_LIMIT:
                 requests = [t for t in LOGIN_RATE_LIMIT[ip_address] if now - t < 300] # 5 mins
@@ -551,7 +551,7 @@ class handler(http.server.BaseHTTPRequestHandler):
             return self.send_json(200, {'success': True})
             
         elif path == '/api/leads':
-            ip_address = self.headers.get('x-forwarded-for', '127.0.0.1').split(',')[0].strip()
+            ip_address = self.headers.get('x-real-ip', self.headers.get('x-forwarded-for', '127.0.0.1')).split(',')[-1].strip()
             
             # Rate limiting: max 5 requests per minute per IP
             now = time.time()
