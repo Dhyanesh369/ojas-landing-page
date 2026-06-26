@@ -279,30 +279,25 @@ class handler(http.server.BaseHTTPRequestHandler):
                 c = conn.cursor()
                 
                 if path == '/api/admin/dashboard':
-                    # Real Analytics
-                    c.execute('SELECT COUNT(DISTINCT session_id) as count FROM visitor_analytics')
-                    total_visitors = c.fetchone()['count']
-                    
-                    c.execute('SELECT COUNT(*) as count FROM leads WHERE is_archived = 0')
-                    total_leads = c.fetchone()['count']
+                    c.execute('''
+                        SELECT 
+                            (SELECT COUNT(DISTINCT session_id) FROM visitor_analytics) as total_visitors,
+                            (SELECT COUNT(*) FROM leads WHERE is_archived = 0) as total_leads,
+                            (SELECT AVG(CAST(event_data AS INTEGER)) FROM visitor_analytics WHERE event_type = 'Time on Page') as avg_time,
+                            (SELECT COUNT(*) FROM visitor_analytics WHERE event_type = 'Bounce') as bounces,
+                            (SELECT event_data FROM visitor_analytics WHERE event_type = 'CTA Button Click' GROUP BY event_data ORDER BY COUNT(*) DESC LIMIT 1) as top_cta,
+                            (SELECT form_source FROM leads GROUP BY form_source ORDER BY COUNT(*) DESC LIMIT 1) as top_form
+                    ''')
+                    row = c.fetchone()
+                    total_visitors = row['total_visitors']
+                    total_leads = row['total_leads']
+                    avg_time = round(row['avg_time'] or 0)
+                    bounces = row['bounces']
+                    top_cta = row['top_cta'] or 'None'
+                    top_form = row['top_form'] or 'None'
                     
                     conv_rate = round((total_leads / total_visitors) * 100, 1) if total_visitors > 0 else 0
-                    
-                    c.execute("SELECT AVG(CAST(event_data AS INTEGER)) as avg_time FROM visitor_analytics WHERE event_type = 'Time on Page'")
-                    avg_time_row = c.fetchone()
-                    avg_time = round(avg_time_row['avg_time'] or 0)
-                    
-                    c.execute("SELECT COUNT(*) as bounces FROM visitor_analytics WHERE event_type = 'Bounce'")
-                    bounces = c.fetchone()['bounces']
                     bounce_rate = round((bounces / total_visitors) * 100, 1) if total_visitors > 0 else 0
-                    
-                    c.execute("SELECT event_data, COUNT(*) as c FROM visitor_analytics WHERE event_type = 'CTA Button Click' GROUP BY event_data ORDER BY c DESC LIMIT 1")
-                    top_cta_row = c.fetchone()
-                    top_cta = top_cta_row['event_data'] if top_cta_row else 'None'
-                    
-                    c.execute("SELECT form_source, COUNT(*) as c FROM leads GROUP BY form_source ORDER BY c DESC LIMIT 1")
-                    top_form_row = c.fetchone()
-                    top_form = top_form_row['form_source'] if top_form_row else 'None'
                     
                     c.execute("SELECT form_source, COUNT(*) as count FROM leads WHERE is_archived = 0 GROUP BY form_source")
                     sources = {row['form_source']: row['count'] for row in c.fetchall()}
