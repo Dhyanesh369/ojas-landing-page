@@ -607,10 +607,11 @@ class handler(http.server.BaseHTTPRequestHandler):
                 c.execute('INSERT INTO email_queue (to_email, subject, body) VALUES (%s, %s, %s)', (email, visitor_subject, visitor_body))
                 c.execute('INSERT INTO email_queue (to_email, subject, body) VALUES (%s, %s, %s)', (ADMIN_EMAIL, admin_subject, admin_body))
                 
+                c.execute('INSERT INTO submission_logs (email, ip_address, status) VALUES (%s, %s, %s)', (email, ip_address, 'Success'))
+                
                 conn.commit()
                 conn.close()
                 
-                log_attempt(email, ip_address, 'Success')
                 return self.send_json(200, {'success': True, 'lead_id': lead_id, 'message': 'Lead saved successfully.'})
                 
             except Exception as e:
@@ -762,8 +763,4 @@ class handler(http.server.BaseHTTPRequestHandler):
             conn.close()
             return self.send_json(200, {'success': True})
 
-# Initialize DB safely on module load for Vercel
-try:
-    init_db()
-except Exception as e:
-    logging.error(f"Failed to initialize database on startup: {str(e)}")
+# DB is initialized manually or via separate script; removed from module load to prevent cold start delays.
