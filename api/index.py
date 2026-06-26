@@ -18,6 +18,7 @@ import html
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 IP_RATE_LIMIT = {}
+LOGIN_RATE_LIMIT = {}
 
 PORT = 8000
 def get_db_connection():
@@ -377,82 +378,82 @@ class handler(http.server.BaseHTTPRequestHandler):
                     source = qs.get('source', [''])[0]
                     export_format = qs.get('format', ['csv'])[0]
                 
-                query = "SELECT * FROM leads WHERE 1=1"
-                params = []
-                
-                if start_date:
-                    query += " AND date(created_at) >= %s"
-                    params.append(start_date)
-                if end_date:
-                    query += " AND date(created_at) <= %s"
-                    params.append(end_date)
-                if campaign:
-                    query += " AND utm_campaign ILIKE %s"
-                    params.append(f"%{campaign}%")
-                if status:
-                    query += " AND lead_status = %s"
-                    params.append(status)
-                if source:
-                    query += " AND form_source = %s"
-                    params.append(source)
+                    query = "SELECT * FROM leads WHERE 1=1"
+                    params = []
                     
-                query += " ORDER BY created_at DESC"
-                c.execute(query, params)
-                leads = c.fetchall()
-                conn.close()
-                
-                if export_format == 'xlsx':
-                    import openpyxl
-                    from io import BytesIO
-                    wb = openpyxl.Workbook()
-                    ws = wb.active
-                    ws.title = "Leads"
-                    if leads:
-                        headers = [
-                            'created_at', 'full_name', 'email', 'whatsapp_number', 
-                            'form_source', 'lead_status', 'priority', 'survey_planning_time', 
-                            'survey_currently_trying', 'survey_specialist', 'survey_challenge', 
-                            'survey_early_access', 'notes'
-                        ]
-                        ws.append(headers)
-                        for row in leads:
-                            # Convert to strings to avoid excel errors on None
-                            ws.append([str(row.get(k, '')) if row.get(k) is not None else '' for k in headers])
+                    if start_date:
+                        query += " AND date(created_at) >= %s"
+                        params.append(start_date)
+                    if end_date:
+                        query += " AND date(created_at) <= %s"
+                        params.append(end_date)
+                    if campaign:
+                        query += " AND utm_campaign ILIKE %s"
+                        params.append(f"%{campaign}%")
+                    if status:
+                        query += " AND lead_status = %s"
+                        params.append(status)
+                    if source:
+                        query += " AND form_source = %s"
+                        params.append(source)
+                        
+                    query += " ORDER BY created_at DESC"
+                    c.execute(query, params)
+                    leads = c.fetchall()
+                    conn.close()
                     
-                    stream = BytesIO()
-                    wb.save(stream)
-                    data = stream.getvalue()
-                    
-                    self.send_response(200)
-                    self.send_header('Content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-                    self.send_header('Content-Disposition', 'attachment; filename="ojas_leads_export.xlsx"')
-                    self.send_header('Content-Length', str(len(data)))
-                    self.end_headers()
-                    self.wfile.write(data)
-                else:
-                    import io
-                    import csv
-                    stream = io.StringIO()
-                    writer = csv.writer(stream)
-                    if leads:
-                        headers = [
-                            'created_at', 'full_name', 'email', 'whatsapp_number', 
-                            'form_source', 'lead_status', 'priority', 'survey_planning_time', 
-                            'survey_currently_trying', 'survey_specialist', 'survey_challenge', 
-                            'survey_early_access', 'notes'
-                        ]
-                        writer.writerow(headers)
-                        for row in leads:
-                            writer.writerow([str(row.get(k, '')) if row.get(k) is not None else '' for k in headers])
-                    
-                    data = stream.getvalue().encode('utf-8')
-                    self.send_response(200)
-                    self.send_header('Content-type', 'text/csv')
-                    self.send_header('Content-Disposition', 'attachment; filename="ojas_leads_export.csv"')
-                    self.send_header('Content-Length', str(len(data)))
-                    self.end_headers()
-                    self.wfile.write(data)
-                return
+                    if export_format == 'xlsx':
+                        import openpyxl
+                        from io import BytesIO
+                        wb = openpyxl.Workbook()
+                        ws = wb.active
+                        ws.title = "Leads"
+                        if leads:
+                            headers = [
+                                'created_at', 'full_name', 'email', 'whatsapp_number', 
+                                'form_source', 'lead_status', 'priority', 'survey_planning_time', 
+                                'survey_currently_trying', 'survey_specialist', 'survey_challenge', 
+                                'survey_early_access', 'notes'
+                            ]
+                            ws.append(headers)
+                            for row in leads:
+                                # Convert to strings to avoid excel errors on None
+                                ws.append([str(row.get(k, '')) if row.get(k) is not None else '' for k in headers])
+                        
+                        stream = BytesIO()
+                        wb.save(stream)
+                        data = stream.getvalue()
+                        
+                        self.send_response(200)
+                        self.send_header('Content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                        self.send_header('Content-Disposition', 'attachment; filename="ojas_leads_export.xlsx"')
+                        self.send_header('Content-Length', str(len(data)))
+                        self.end_headers()
+                        self.wfile.write(data)
+                    else:
+                        import io
+                        import csv
+                        stream = io.StringIO()
+                        writer = csv.writer(stream)
+                        if leads:
+                            headers = [
+                                'created_at', 'full_name', 'email', 'whatsapp_number', 
+                                'form_source', 'lead_status', 'priority', 'survey_planning_time', 
+                                'survey_currently_trying', 'survey_specialist', 'survey_challenge', 
+                                'survey_early_access', 'notes'
+                            ]
+                            writer.writerow(headers)
+                            for row in leads:
+                                writer.writerow([str(row.get(k, '')) if row.get(k) is not None else '' for k in headers])
+                        
+                        data = stream.getvalue().encode('utf-8')
+                        self.send_response(200)
+                        self.send_header('Content-type', 'text/csv')
+                        self.send_header('Content-Disposition', 'attachment; filename="ojas_leads_export.csv"')
+                        self.send_header('Content-Length', str(len(data)))
+                        self.end_headers()
+                        self.wfile.write(data)
+                    return
                 
             conn.close()
             return self.send_json(404, {'error': 'Not found'})
@@ -490,6 +491,17 @@ class handler(http.server.BaseHTTPRequestHandler):
             return self.send_json(200, {'success': True})
             
         elif path == '/api/admin/login':
+            ip_address = self.headers.get('x-forwarded-for', '127.0.0.1').split(',')[0].strip()
+            now = time.time()
+            if ip_address in LOGIN_RATE_LIMIT:
+                requests = [t for t in LOGIN_RATE_LIMIT[ip_address] if now - t < 300] # 5 mins
+                if len(requests) >= 5:
+                    return self.send_json(429, {'error': 'Too many login attempts. Please try again in 5 minutes.'})
+                requests.append(now)
+                LOGIN_RATE_LIMIT[ip_address] = requests
+            else:
+                LOGIN_RATE_LIMIT[ip_address] = [now]
+                
             email = data.get('email')
             password = data.get('password')
             try:

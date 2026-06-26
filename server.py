@@ -17,6 +17,7 @@ import html
 
 logging.basicConfig(filename='app.log', level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 IP_RATE_LIMIT = {}
+LOGIN_RATE_LIMIT = {}
 
 PORT = 8000
 DB_FILE = 'leads.db'
@@ -480,6 +481,17 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return self.send_json(200, {'success': True})
             
         elif path == '/api/admin/login':
+            ip_address = self.client_address[0]
+            now = time.time()
+            if ip_address in LOGIN_RATE_LIMIT:
+                requests = [t for t in LOGIN_RATE_LIMIT[ip_address] if now - t < 300] # 5 mins
+                if len(requests) >= 5:
+                    return self.send_json(429, {'error': 'Too many login attempts. Please try again in 5 minutes.'})
+                requests.append(now)
+                LOGIN_RATE_LIMIT[ip_address] = requests
+            else:
+                LOGIN_RATE_LIMIT[ip_address] = [now]
+                
             email = data.get('email')
             password = data.get('password')
             conn = sqlite3.connect(DB_FILE)
