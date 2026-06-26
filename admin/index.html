@@ -527,39 +527,81 @@ async function refreshCRM(id) {
     } catch(e) {}
 }
 
-async function updateLeadMeta() {
+function updateLeadMeta() {
     const id = document.getElementById('crm-id').value;
     const status = document.getElementById('crm-status').value;
     const priority = document.getElementById('crm-priority').value;
     const is_archived = parseInt(document.getElementById('btn-archive').dataset.archived);
-    await apiCall(`/api/admin/leads/${id}`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({lead_status: status, priority, is_archived}) });
-    refreshCRM(id);
+    
+    // Optimistic UI Update
+    const badge = document.getElementById('crm-badge-status');
+    badge.innerText = status;
+    badge.className = `status-badge status-${status.toLowerCase().replace(' ', '-')}`;
+    
+    // Background request
+    apiCall(`/api/admin/leads/${id}`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({lead_status: status, priority, is_archived}) })
+        .then(() => refreshCRM(id)).catch(()=>{});
 }
 
-async function toggleArchive() {
+function toggleArchive() {
     const id = document.getElementById('crm-id').value;
     const status = document.getElementById('crm-status').value;
     const priority = document.getElementById('crm-priority').value;
-    const newArchived = parseInt(document.getElementById('btn-archive').dataset.archived) ? 0 : 1;
-    await apiCall(`/api/admin/leads/${id}`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({lead_status: status, priority, is_archived: newArchived}) });
-    refreshCRM(id);
+    const arcBtn = document.getElementById('btn-archive');
+    const newArchived = parseInt(arcBtn.dataset.archived) ? 0 : 1;
+    
+    // Optimistic UI Update
+    arcBtn.dataset.archived = newArchived;
+    arcBtn.innerText = newArchived ? 'Restore Lead' : 'Archive Lead';
+    document.getElementById('crm-badge-archived').style.display = newArchived ? 'inline-block' : 'none';
+    
+    // Background request
+    apiCall(`/api/admin/leads/${id}`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({lead_status: status, priority, is_archived: newArchived}) })
+        .then(() => refreshCRM(id)).catch(()=>{});
 }
 
-async function deleteLead() {
+function deleteLead() {
     const id = document.getElementById('crm-id').value;
     if(confirm('Are you absolutely sure you want to permanently delete this lead? This action cannot be undone.')) {
-        try { await apiCall(`/api/admin/leads/${id}`, {method: 'DELETE'}); closeCRM(); } catch (e) { alert(e.message); }
+        // Optimistic UI Update
+        document.getElementById('crm-modal').style.display = 'none';
+        const row = document.querySelector(`button[onclick="openCRM('${id}')"]`);
+        if (row && row.closest('tr')) row.closest('tr').remove();
+        
+        // Background request
+        apiCall(`/api/admin/leads/${id}`, {method: 'DELETE'}).then(()=>loadLeads()).catch(e => alert(e.message));
     }
 }
 
-async function logEvent() {
+function logEvent() {
     const id = document.getElementById('crm-id').value;
     const type = document.getElementById('crm-event-type').value;
     const desc = document.getElementById('crm-event-desc').value;
     if(!desc.trim()) return alert("Event description cannot be empty.");
-    await apiCall(`/api/admin/leads/${id}/events`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({event_type: type, description: desc}) });
+    
+    // Optimistic UI Update
+    const tContainer = document.getElementById('crm-timeline');
+    let typeClass = 'event-type-note';
+    if(type.includes('Status') || type.includes('Priority')) typeClass = 'event-type-status';
+    if(type.includes('Email')) typeClass = 'event-type-email';
+    if(type.includes('Archive')) typeClass = 'event-type-archived';
+    
+    const newEvent = `
+        <div class="timeline-event ${typeClass}" style="opacity: 0.7;">
+            <div class="timeline-icon">${escapeHTML(type.charAt(0))}</div>
+            <div class="timeline-content">
+                <div class="timeline-time">Just now</div>
+                <div class="timeline-title">${escapeHTML(type)}</div>
+                <div class="timeline-desc">${escapeHTML(desc)}</div>
+            </div>
+        </div>
+    `;
+    tContainer.insertAdjacentHTML('afterbegin', newEvent);
     document.getElementById('crm-event-desc').value = '';
-    refreshCRM(id);
+    
+    // Background request
+    apiCall(`/api/admin/leads/${id}/events`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({event_type: type, description: desc}) })
+        .then(() => refreshCRM(id)).catch(()=>{});
 }
 
 function openExportModal() {
@@ -570,19 +612,25 @@ function closeExportModal() {
     document.getElementById('export-modal').style.display = 'none';
 }
 
-async function resetDashboard() {
+function resetDashboard() {
     if(confirm('Are you sure you want to reset all analytics and lead data? This will give you a completely fresh dashboard and cannot be undone.')) {
-        try {
-            await apiCall('/api/admin/reset', { method: 'DELETE' });
-            alert('Dashboard reset successfully.');
-            if(document.getElementById('view-dashboard').style.display !== 'none') {
-                loadDashboard();
-            } else {
-                loadLeads();
-            }
-        } catch(e) {
-            alert('Error resetting dashboard: ' + e.message);
+        // Optimistic UI Update
+        if(document.getElementById('view-dashboard').style.display !== 'none') {
+            document.getElementById('stat-visitors').innerText = '0';
+            document.getElementById('stat-leads').innerText = '0';
+            document.getElementById('stat-conv').innerText = '0%';
+            document.getElementById('stat-time').innerText = '0s';
+            document.getElementById('stat-bounce').innerText = '0%';
+            document.getElementById('stat-cta').innerText = 'None';
+            document.getElementById('source-stats').innerHTML = 'No data available';
+            document.getElementById('campaign-stats').innerHTML = 'No campaign data';
+            document.getElementById('trend-stats').innerHTML = 'No trend data';
+        } else {
+            document.getElementById('leads-tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;">No leads found.</td></tr>';
         }
+        
+        // Background request
+        apiCall('/api/admin/reset', { method: 'DELETE' }).catch(e => alert('Error resetting dashboard: ' + e.message));
     }
 }
 
