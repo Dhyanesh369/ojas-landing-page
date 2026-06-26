@@ -404,25 +404,19 @@ function submitToBackend(form, btn, originalText, successId, data, errorEl) {
   btn.innerHTML = 'Processing...';
   btn.classList.add('btn-loading');
   
+  const leadId = crypto.randomUUID();
+  data.id = leadId;
+  
+  // Fire and forget with keepalive so the request completes even after redirect
   fetch('/api/leads', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  })
-  .then(response => response.json().then(res => ({status: response.status, body: res})))
-  .then(({status, body}) => {
-    if (status !== 200) {
-      throw new Error(body.error || 'Submission failed');
-    }
-    window.location.href = '/thankyou.html?id=' + body.lead_id;
-  })
-  .catch(error => {
-    showError(form.querySelector('input[type="email"]'), errorEl, error.message);
-  })
-  .finally(() => {
-    btn.innerHTML = originalText;
-    btn.classList.remove('btn-loading');
-  });
+    body: JSON.stringify(data),
+    keepalive: true
+  }).catch(() => {});
+  
+  // Instantaneous optimistic navigation
+  window.location.href = '/thankyou.html?id=' + leadId;
 }
 
 // Hero Form

@@ -558,11 +558,11 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 
                 c.execute('SELECT id FROM leads WHERE email = ?', (email,))
                 if c.fetchone():
-                    log_attempt(email, ip_address, 'Duplicate', 'This email is already registered')
                     conn.close()
-                    return self.send_json(400, {'error': 'This email is already registered.'})
+                    # Return success for duplicates to prevent enumeration and handle optimistic UI gracefully
+                    return self.send_json(200, {'success': True, 'lead_id': data.get('id', ''), 'message': 'Email already registered.'})
                 
-                lead_id = str(uuid.uuid4())
+                lead_id = data.get('id') or str(uuid.uuid4())
                 c.execute('''
                     INSERT INTO leads (
                         id, full_name, email, whatsapp_number, form_source,
