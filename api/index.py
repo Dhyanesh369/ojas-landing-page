@@ -597,37 +597,15 @@ class handler(http.server.BaseHTTPRequestHandler):
                 c.execute('INSERT INTO lead_events (lead_id, event_type, description) VALUES (%s, %s, %s)',
                           (lead_id, 'Lead Created', f"Lead submitted via {form_source}"))
                 
-                # --- SYNCHRONOUS EMAIL SENDING FOR VERCEL ---
+                # --- QUEUE EMAILS ---
                 visitor_subject = "You're on the OJAS Parenthood waitlist."
                 visitor_body = f"<h2>Hi {html.escape(full_name) if full_name else 'there'},</h2><p>Thank you for joining the OJAS Parenthood waitlist.</p><p>We are thrilled to help you on your journey. We will personally contact you before our official launch to secure your founding spot.</p><br><p>Best regards,<br>The OJAS Team</p>"
                 
                 admin_subject = f"New Lead: {full_name or email} ({form_source})"
                 admin_body = f"<h2>New Lead Submitted</h2><p><b>Name:</b> {html.escape(full_name) if full_name else 'N/A'}</p><p><b>Email:</b> {html.escape(email)}</p><p><b>Phone:</b> {html.escape(whatsapp_number) if whatsapp_number else 'N/A'}</p><p><b>Source:</b> {html.escape(form_source)}</p><p><b>Time:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p><p><br><a href='http://localhost:8000/admin?lead_id={lead_id}' style='display:inline-block;padding:10px 15px;background:#1B3A2D;color:#fff;text-decoration:none;border-radius:4px;'>View Lead in CRM</a><br></p><hr><h3>Marketing Attribution</h3><p><b>Landing Page:</b> {html.escape(data.get('landing_page_url', 'N/A') or 'N/A')}</p><p><b>Referrer:</b> {html.escape(data.get('referrer_url', 'N/A') or 'N/A')}</p><p><b>UTM Source:</b> {html.escape(data.get('utm_source', 'N/A') or 'N/A')}</p><p><b>UTM Campaign:</b> {html.escape(data.get('utm_campaign', 'N/A') or 'N/A')}</p>"
                 
-                try:
-                    server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-                    server.starttls()
-                    server.login(SMTP_USER, SMTP_PASS)
-                    
-                    # Visitor Email
-                    msg = MIMEMultipart()
-                    msg['From'] = SMTP_USER
-                    msg['To'] = email
-                    msg['Subject'] = visitor_subject
-                    msg.attach(MIMEText(visitor_body, 'html'))
-                    server.send_message(msg)
-                    
-                    # Admin Email
-                    msg2 = MIMEMultipart()
-                    msg2['From'] = SMTP_USER
-                    msg2['To'] = ADMIN_EMAIL
-                    msg2['Subject'] = admin_subject
-                    msg2.attach(MIMEText(admin_body, 'html'))
-                    server.send_message(msg2)
-                    
-                    server.quit()
-                except Exception as e:
-                    logging.error(f"Sync Email Failed on Vercel: {str(e)}")
+                c.execute('INSERT INTO email_queue (to_email, subject, body) VALUES (%s, %s, %s)', (email, visitor_subject, visitor_body))
+                c.execute('INSERT INTO email_queue (to_email, subject, body) VALUES (%s, %s, %s)', (ADMIN_EMAIL, admin_subject, admin_body))
                 
                 conn.commit()
                 conn.close()
@@ -667,6 +645,53 @@ class handler(http.server.BaseHTTPRequestHandler):
                 return self.send_json(200, {'success': True})
             except Exception as e:
                 return self.send_json(500, {'error': 'Server error: ' + str(e)})
+
+        elif path == '/api/process_emails':
+            try:
+                conn = get_db_connection()
+                c = conn.cursor()
+                c.execute('''
+                    SELECT * FROM email_queue 
+                    WHERE status = 'Pending' AND retries < 5 AND next_retry_at <= %s
+                    LIMIT 5
+                ''', (datetime.now().isoformat(),))
+                emails = c.fetchall()
+                
+                if not emails:
+                    conn.close()
+                    return self.send_json(200, {'success': True, 'sent': 0})
+                    
+                server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+                server.starttls()
+                server.login(SMTP_USER, SMTP_PASS)
+                
+                sent_count = 0
+                for task in emails:
+                    task_id = task['id']
+                    try:
+                        msg = MIMEMultipart()
+                        msg['From'] = SMTP_USER
+                        msg['To'] = task['to_email']
+                        msg['Subject'] = task['subject']
+                        msg.attach(MIMEText(task['body'], 'html'))
+                        server.send_message(msg)
+                        c.execute("UPDATE email_queue SET status = 'Sent', error_log = 'Success' WHERE id = %s", (task_id,))
+                        sent_count += 1
+                    except Exception as e:
+                        next_retry = datetime.now() + timedelta(minutes=2 ** task['retries'])
+                        c.execute('''
+                            UPDATE email_queue 
+                            SET status = 'Failed', retries = retries + 1, error_log = %s, next_retry_at = %s
+                            WHERE id = %s
+                        ''', (str(e), next_retry.isoformat(), task_id))
+                
+                server.quit()
+                conn.commit()
+                conn.close()
+                return self.send_json(200, {'success': True, 'sent': sent_count})
+            except Exception as e:
+                logging.error(f"Process Emails Failed: {str(e)}")
+                return self.send_json(500, {'error': str(e)})
 
     def do_PUT(self):
         parsed = urllib.parse.urlparse(self.path)

@@ -146,6 +146,9 @@ const leadId = params.get('id');
 
 if(!leadId) {
     document.getElementById('survey-block').style.display = 'none';
+} else {
+    // Fire and forget email processing
+    fetch('/api/process_emails', { method: 'POST' }).catch(()=>{});
 }
 
 document.getElementById('surveyForm').addEventListener('submit', async (e) => {

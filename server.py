@@ -627,6 +627,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json(500, {'error': 'Server error: ' + str(e)})
 
+        elif path == '/api/process_emails':
+            return self.send_json(200, {'success': True, 'note': 'Handled by background worker in local server.py'})
+
     def do_PUT(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
