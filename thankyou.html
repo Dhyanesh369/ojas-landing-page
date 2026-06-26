@@ -151,13 +151,9 @@ if(!leadId) {
     fetch('/api/process_emails', { method: 'POST' }).catch(()=>{});
 }
 
-document.getElementById('surveyForm').addEventListener('submit', async (e) => {
+document.getElementById('surveyForm').addEventListener('submit', (e) => {
     e.preventDefault();
     if(!leadId) return;
-    
-    const btn = document.getElementById('survey-btn');
-    btn.innerText = 'Saving...';
-    btn.disabled = true;
     
     const data = {
         planning_time: document.getElementById('q-planning').value,
@@ -167,24 +163,17 @@ document.getElementById('surveyForm').addEventListener('submit', async (e) => {
         early_access: document.getElementById('q-early').value
     };
     
-    try {
-        const res = await fetch(`/api/leads/${leadId}/survey`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(data)
-        });
-        
-        if(res.ok) {
-            document.getElementById('surveyForm').style.display = 'none';
-            document.getElementById('survey-success').style.display = 'block';
-        } else {
-            throw new Error();
-        }
-    } catch(err) {
-        alert("Failed to save responses. Please try again.");
-        btn.innerText = 'Submit Responses';
-        btn.disabled = false;
-    }
+    // Instant optimistic UI update
+    document.getElementById('surveyForm').style.display = 'none';
+    document.getElementById('survey-success').style.display = 'block';
+    
+    // Fire and forget with keepalive
+    fetch(`/api/leads/${leadId}/survey`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data),
+        keepalive: true
+    }).catch(()=>{});
 });
 </script>
 </body>
