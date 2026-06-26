@@ -264,6 +264,13 @@ class handler(http.server.BaseHTTPRequestHandler):
     def send_json(self, status, data):
         self.send_response(status)
         self.send_header('Content-type', 'application/json')
+        self.send_header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('X-Frame-Options', 'DENY')
+        self.send_header('X-XSS-Protection', '1; mode=block')
+        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self';")
+        self.send_header('Referrer-Policy', 'strict-origin-when-cross-origin')
+        self.send_header('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), interest-cohort=()')
         self.end_headers()
         self.wfile.write(json.dumps(data, default=str).encode())
 
